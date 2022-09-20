@@ -15,7 +15,6 @@ pub struct Srgb {
 }
 
 impl Srgb {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         layouts: &BindLayouts,
