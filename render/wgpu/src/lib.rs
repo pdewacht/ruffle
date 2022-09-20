@@ -36,6 +36,7 @@ mod frame;
 mod layouts;
 mod mesh;
 mod shaders;
+mod srgb;
 mod surface;
 
 pub struct RegistryData {
