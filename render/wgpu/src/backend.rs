@@ -22,7 +22,7 @@ use std::path::Path;
 use std::sync::Arc;
 use swf::Color;
 
-const DEFAULT_SAMPLE_COUNT: u32 = 4;
+const DEFAULT_SAMPLE_COUNT: u32 = 1;
 
 pub struct WgpuRenderBackend<T: RenderTarget> {
     descriptors: Arc<Descriptors>,
@@ -278,7 +278,13 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
             self.srgb = None;
         }
 
-        self.surface = Surface::new(&self.descriptors, 4, width, height, frame_buffer_format);
+        self.surface = Surface::new(
+            &self.descriptors,
+            DEFAULT_SAMPLE_COUNT,
+            width,
+            height,
+            frame_buffer_format,
+        );
 
         self.globals.set_resolution(width, height);
         self.viewport_scale_factor = dimensions.scale_factor;
