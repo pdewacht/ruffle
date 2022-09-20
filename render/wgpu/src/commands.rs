@@ -8,22 +8,22 @@ use ruffle_render::commands::{CommandHandler, CommandList};
 use ruffle_render::transform::Transform;
 use swf::{BlendMode, Color};
 
-pub struct CommandRenderer<'a, 'b> {
-    frame: &'b mut Frame<'a>,
-    bitmap_registry: &'a FnvHashMap<BitmapHandle, RegistryData>,
-    meshes: &'a Vec<Mesh>,
-    quad_vertices: wgpu::BufferSlice<'a>,
-    quad_indices: wgpu::BufferSlice<'a>,
+pub struct CommandRenderer<'pass, 'frame: 'pass, 'global: 'frame> {
+    frame: Frame<'pass, 'frame, 'global>,
+    bitmap_registry: &'global FnvHashMap<BitmapHandle, RegistryData>,
+    meshes: &'global Vec<Mesh>,
+    quad_vertices: wgpu::BufferSlice<'global>,
+    quad_indices: wgpu::BufferSlice<'global>,
     num_masks: u32,
 }
 
-impl<'a, 'b> CommandRenderer<'a, 'b> {
+impl<'pass, 'frame: 'pass, 'global: 'frame> CommandRenderer<'pass, 'frame, 'global> {
     pub fn new(
-        frame: &'b mut Frame<'a>,
-        meshes: &'a Vec<Mesh>,
-        bitmap_registry: &'a FnvHashMap<BitmapHandle, RegistryData>,
-        quad_vertices: wgpu::BufferSlice<'a>,
-        quad_indices: wgpu::BufferSlice<'a>,
+        frame: Frame<'pass, 'frame, 'global>,
+        meshes: &'global Vec<Mesh>,
+        bitmap_registry: &'global FnvHashMap<BitmapHandle, RegistryData>,
+        quad_vertices: wgpu::BufferSlice<'global>,
+        quad_indices: wgpu::BufferSlice<'global>,
     ) -> Self {
         Self {
             frame,
@@ -36,7 +36,9 @@ impl<'a, 'b> CommandRenderer<'a, 'b> {
     }
 }
 
-impl<'a, 'b> CommandHandler for CommandRenderer<'a, 'b> {
+impl<'pass, 'frame: 'pass, 'global: 'frame> CommandHandler
+    for CommandRenderer<'pass, 'frame, 'global>
+{
     fn render_bitmap(&mut self, bitmap: BitmapHandle, transform: &Transform, smoothing: bool) {
         if let Some(entry) = self.bitmap_registry.get(&bitmap) {
             let texture = &entry.texture_wrapper;
