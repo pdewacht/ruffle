@@ -1,3 +1,4 @@
+use crate::library::Library;
 use crate::mesh::{Draw, Mesh};
 use crate::srgb::Srgb;
 use crate::surface::Surface;
@@ -9,7 +10,6 @@ use crate::{
     format_list, get_backend_names, BufferDimensions, Descriptors, Error, Globals, RegistryData,
     RenderTarget, SwapChainTarget, Texture, TextureOffscreen, Transforms,
 };
-use fnv::FnvHashMap;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use ruffle_render::backend::{RenderBackend, ShapeHandle, ViewportDimensions};
 use ruffle_render::bitmap::{Bitmap, BitmapHandle, BitmapSource};
@@ -31,10 +31,8 @@ pub struct WgpuRenderBackend<T: RenderTarget> {
     target: T,
     surface: Surface,
     srgb: Option<Srgb>,
-    meshes: Vec<Mesh>,
     shape_tessellator: ShapeTessellator,
-    bitmap_registry: FnvHashMap<BitmapHandle, RegistryData>,
-    next_bitmap_handle: BitmapHandle,
+    library: Library,
     // This is currently unused - we just store it to report in
     // `get_viewport_dimensions`
     viewport_scale_factor: f64,
@@ -170,11 +168,9 @@ impl<T: RenderTarget> WgpuRenderBackend<T> {
             target,
             surface,
             srgb,
-            meshes: Vec::new(),
             shape_tessellator: ShapeTessellator::new(),
+            library: Library::new(),
 
-            bitmap_registry: Default::default(),
-            next_bitmap_handle: BitmapHandle(0),
             viewport_scale_factor: 1.0,
         })
     }
@@ -225,7 +221,7 @@ impl<T: RenderTarget> WgpuRenderBackend<T> {
                 draw,
                 shape_id,
                 draw_id,
-                &self.bitmap_registry,
+                &self.library.bitmaps,
             ));
         }
 
@@ -301,9 +297,9 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
         shape: DistilledShape,
         bitmap_source: &dyn BitmapSource,
     ) -> ShapeHandle {
-        let handle = ShapeHandle(self.meshes.len());
+        let handle = ShapeHandle(self.library.meshes.len());
         let mesh = self.register_shape_internal(shape, bitmap_source);
-        self.meshes.push(mesh);
+        self.library.meshes.push(mesh);
         handle
     }
 
@@ -314,17 +310,17 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
         handle: ShapeHandle,
     ) {
         let mesh = self.register_shape_internal(shape, bitmap_source);
-        self.meshes[handle.0] = mesh;
+        self.library.meshes[handle.0] = mesh;
     }
 
     fn register_glyph_shape(&mut self, glyph: &swf::Glyph) -> ShapeHandle {
         let shape = ruffle_render::shape_utils::swf_glyph_to_shape(glyph);
-        let handle = ShapeHandle(self.meshes.len());
+        let handle = ShapeHandle(self.library.meshes.len());
         let mesh = self.register_shape_internal(
             (&shape).into(),
             &ruffle_render::backend::null::NullBitmapSource,
         );
-        self.meshes.push(mesh);
+        self.library.meshes.push(mesh);
         handle
     }
 
@@ -358,8 +354,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
             &self.descriptors,
             &mut self.globals,
             &mut self.uniform_buffers_storage,
-            &self.meshes,
-            &self.bitmap_registry,
+            &self.library,
             commands,
         );
 
@@ -380,7 +375,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
     }
 
     fn get_bitmap_pixels(&mut self, bitmap: BitmapHandle) -> Option<Bitmap> {
-        self.bitmap_registry.get(&bitmap).map(|e| e.bitmap.clone())
+        self.library.bitmaps.get(&bitmap).map(|e| e.bitmap.clone())
     }
 
     fn register_bitmap(&mut self, bitmap: Bitmap) -> Result<BitmapHandle, BitmapError> {
@@ -430,11 +425,11 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
             extent,
         );
 
-        let handle = self.next_bitmap_handle;
-        self.next_bitmap_handle = BitmapHandle(self.next_bitmap_handle.0 + 1);
+        let handle = self.library.next_bitmap_handle();
 
         if self
-            .bitmap_registry
+            .library
+            .bitmaps
             .insert(
                 handle,
                 RegistryData {
@@ -456,7 +451,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
     }
 
     fn unregister_bitmap(&mut self, handle: BitmapHandle) {
-        self.bitmap_registry.remove(&handle);
+        self.library.bitmaps.remove(&handle);
     }
 
     fn update_texture(
@@ -466,7 +461,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
         height: u32,
         rgba: Vec<u8>,
     ) -> Result<(), BitmapError> {
-        let texture = if let Some(entry) = self.bitmap_registry.get(&handle) {
+        let texture = if let Some(entry) = self.library.bitmaps.get(&handle) {
             &entry.texture_wrapper.texture
         } else {
             return Err(BitmapError::UnknownHandle(handle));
@@ -513,7 +508,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
         // an issue if a caller tried to render the target texture
         // to itself, which probably isn't supported by Flash. If it
         // is, then we could change `TextureTarget` to use an `Rc<wgpu::Texture>`
-        let mut texture = self.bitmap_registry.remove(&handle).unwrap();
+        let mut texture = self.library.bitmaps.remove(&handle).unwrap();
 
         let extent = wgpu::Extent3d {
             width,
@@ -581,8 +576,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
             &self.descriptors,
             &mut self.globals,
             &mut self.uniform_buffers_storage,
-            &self.meshes,
-            &self.bitmap_registry,
+            &self.library,
             commands,
         );
         target.submit(
@@ -610,7 +604,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
         texture.texture_wrapper.texture_offscreen = Some(texture_offscreen);
         texture.texture_wrapper.texture = target.texture;
         texture.bitmap = image.clone().unwrap();
-        self.bitmap_registry.insert(handle, texture);
+        self.library.bitmaps.insert(handle, texture);
 
         Ok(image.unwrap())
     }

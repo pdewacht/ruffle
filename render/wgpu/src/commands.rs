@@ -1,7 +1,7 @@
 use crate::frame::Frame;
-use crate::mesh::{DrawType, Mesh};
-use crate::{ColorAdjustments, MaskState, RegistryData};
-use fnv::FnvHashMap;
+use crate::library::Library;
+use crate::mesh::DrawType;
+use crate::{ColorAdjustments, MaskState};
 use ruffle_render::backend::ShapeHandle;
 use ruffle_render::bitmap::BitmapHandle;
 use ruffle_render::commands::{CommandHandler, CommandList};
@@ -10,8 +10,7 @@ use swf::{BlendMode, Color};
 
 pub struct CommandRenderer<'pass, 'frame: 'pass, 'global: 'frame> {
     frame: Frame<'pass, 'frame, 'global>,
-    bitmap_registry: &'global FnvHashMap<BitmapHandle, RegistryData>,
-    meshes: &'global Vec<Mesh>,
+    library: &'global Library,
     quad_vertices: wgpu::BufferSlice<'global>,
     quad_indices: wgpu::BufferSlice<'global>,
     num_masks: u32,
@@ -20,15 +19,13 @@ pub struct CommandRenderer<'pass, 'frame: 'pass, 'global: 'frame> {
 impl<'pass, 'frame: 'pass, 'global: 'frame> CommandRenderer<'pass, 'frame, 'global> {
     pub fn new(
         frame: Frame<'pass, 'frame, 'global>,
-        meshes: &'global Vec<Mesh>,
-        bitmap_registry: &'global FnvHashMap<BitmapHandle, RegistryData>,
+        library: &'global Library,
         quad_vertices: wgpu::BufferSlice<'global>,
         quad_indices: wgpu::BufferSlice<'global>,
     ) -> Self {
         Self {
             frame,
-            bitmap_registry,
-            meshes,
+            library,
             quad_vertices,
             quad_indices,
             num_masks: 0,
@@ -40,7 +37,7 @@ impl<'pass, 'frame: 'pass, 'global: 'frame> CommandHandler
     for CommandRenderer<'pass, 'frame, 'global>
 {
     fn render_bitmap(&mut self, bitmap: BitmapHandle, transform: &Transform, smoothing: bool) {
-        if let Some(entry) = self.bitmap_registry.get(&bitmap) {
+        if let Some(entry) = self.library.bitmaps.get(&bitmap) {
             let texture = &entry.texture_wrapper;
 
             self.frame.apply_transform(
@@ -74,7 +71,7 @@ impl<'pass, 'frame: 'pass, 'global: 'frame> CommandHandler
             ColorAdjustments::from(transform.color_transform),
         );
 
-        let mesh = &self.meshes[shape.0];
+        let mesh = &self.library.meshes[shape.0];
         let mask_state = self.frame.mask_state();
         for draw in &mesh.draws {
             let num_indices = if mask_state != MaskState::DrawMaskStencil

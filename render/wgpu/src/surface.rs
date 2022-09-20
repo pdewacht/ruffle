@@ -1,10 +1,8 @@
 use crate::commands::CommandRenderer;
 use crate::frame::Frame;
-use crate::mesh::Mesh;
+use crate::library::Library;
 use crate::uniform_buffer::BufferStorage;
-use crate::{Descriptors, Globals, Pipelines, RegistryData, Transforms, UniformBuffer};
-use fnv::FnvHashMap;
-use ruffle_render::bitmap::BitmapHandle;
+use crate::{Descriptors, Globals, Pipelines, Transforms, UniformBuffer};
 use ruffle_render::commands::CommandList;
 use std::sync::Arc;
 
@@ -151,8 +149,7 @@ impl Surface {
         descriptors: &Descriptors,
         globals: &mut Globals,
         uniform_buffers_storage: &mut BufferStorage<Transforms>,
-        meshes: &Vec<Mesh>,
-        bitmap_registry: &FnvHashMap<BitmapHandle, RegistryData>,
+        library: &Library,
         commands: CommandList,
     ) -> Vec<wgpu::CommandBuffer> {
         let label = create_debug_label!("Draw encoder");
@@ -209,8 +206,7 @@ impl Surface {
                 render_pass,
                 &mut uniform_encoder,
             ),
-            meshes,
-            bitmap_registry,
+            library,
             descriptors.quad.vertices.slice(..),
             descriptors.quad.indices.slice(..),
         ));
