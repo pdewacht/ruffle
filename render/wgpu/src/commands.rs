@@ -1,6 +1,5 @@
 use crate::frame::Frame;
 use crate::mesh::{DrawType, Mesh};
-use crate::pipelines::BlendMode as ActualBlendMode;
 use crate::{ColorAdjustments, MaskState, RegistryData};
 use fnv::FnvHashMap;
 use ruffle_render::backend::ShapeHandle;
@@ -15,7 +14,6 @@ pub struct CommandRenderer<'a, 'b> {
     meshes: &'a Vec<Mesh>,
     quad_vertices: wgpu::BufferSlice<'a>,
     quad_indices: wgpu::BufferSlice<'a>,
-    blend_modes: Vec<BlendMode>,
     num_masks: u32,
 }
 
@@ -33,7 +31,6 @@ impl<'a, 'b> CommandRenderer<'a, 'b> {
             meshes,
             quad_vertices,
             quad_indices,
-            blend_modes: vec![BlendMode::Normal],
             num_masks: 0,
         }
     }
@@ -163,16 +160,7 @@ impl<'a, 'b> CommandHandler for CommandRenderer<'a, 'b> {
         };
     }
 
-    fn blend(&mut self, commands: CommandList, blend: BlendMode) {
-        self.blend_modes.push(blend);
-        self.frame.set_blend_mode(blend.into());
+    fn blend(&mut self, commands: CommandList, _blend: BlendMode) {
         commands.execute(self);
-        self.blend_modes.pop();
-        self.frame.set_blend_mode(
-            self.blend_modes
-                .last()
-                .map(|b| ActualBlendMode::from(*b))
-                .unwrap_or(ActualBlendMode::Normal),
-        );
     }
 }
