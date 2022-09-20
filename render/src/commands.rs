@@ -13,8 +13,7 @@ pub trait CommandHandler {
     fn deactivate_mask(&mut self);
     fn pop_mask(&mut self);
 
-    fn push_blend_mode(&mut self, blend: BlendMode);
-    fn pop_blend_mode(&mut self);
+    fn blend(&mut self, commands: CommandList, blend_mode: BlendMode);
 }
 
 #[derive(Debug, Default)]
@@ -41,8 +40,7 @@ impl CommandList {
                 Command::ActivateMask => handler.activate_mask(),
                 Command::DeactivateMask => handler.deactivate_mask(),
                 Command::PopMask => handler.pop_mask(),
-                Command::PushBlendMode(blend) => handler.push_blend_mode(blend),
-                Command::PopBlendMode => handler.pop_blend_mode(),
+                Command::Blend(commands, blend_mode) => handler.blend(commands, blend_mode),
             }
         }
     }
@@ -87,12 +85,8 @@ impl CommandHandler for CommandList {
         self.0.push(Command::PopMask);
     }
 
-    fn push_blend_mode(&mut self, blend: BlendMode) {
-        self.0.push(Command::PushBlendMode(blend));
-    }
-
-    fn pop_blend_mode(&mut self) {
-        self.0.push(Command::PopBlendMode);
+    fn blend(&mut self, commands: CommandList, blend_mode: BlendMode) {
+        self.0.push(Command::Blend(commands, blend_mode));
     }
 }
 
@@ -115,6 +109,5 @@ pub enum Command {
     ActivateMask,
     DeactivateMask,
     PopMask,
-    PushBlendMode(BlendMode),
-    PopBlendMode,
+    Blend(CommandList, BlendMode),
 }
