@@ -32,12 +32,10 @@ pub mod backend;
 pub mod clap;
 mod commands;
 pub mod descriptors;
-mod frame;
 mod layouts;
 mod library;
 mod mesh;
 mod shaders;
-mod srgb;
 mod surface;
 
 pub struct RegistryData {

@@ -369,7 +369,7 @@ pub enum Filter {
     GradientBevelFilter(Box<GradientFilter>),
 }
 
-#[derive(Default, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, Enum)]
+#[derive(Default, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, Enum, ToPrimitive)]
 pub enum BlendMode {
     #[default]
     Normal = 0,
@@ -394,6 +394,10 @@ impl BlendMode {
             1 => 0,
             n => n,
         })
+    }
+
+    pub fn to_i32(&self) -> i32 {
+        num_traits::ToPrimitive::to_i32(self).expect("Blend mode value should fit in i32")
     }
 }
 

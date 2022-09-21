@@ -2,8 +2,11 @@ use crate::layouts::BindLayouts;
 use crate::pipelines::VERTEX_BUFFERS_DESCRIPTION;
 use crate::shaders::Shaders;
 use crate::{create_buffer_with_data, BitmapSamplers, Pipelines, TextureTransforms, Vertex};
+use enum_map::Enum;
+use enum_map::EnumMap;
 use fnv::FnvHashMap;
 use std::sync::{Arc, Mutex};
+use swf::BlendMode;
 
 pub struct Descriptors {
     pub adapter: wgpu::Adapter,
@@ -13,6 +16,8 @@ pub struct Descriptors {
     pub bitmap_samplers: BitmapSamplers,
     pub bind_layouts: BindLayouts,
     pub quad: Quad,
+    pub blend_buffers: EnumMap<BlendMode, wgpu::Buffer>,
+    copy_pipeline: Mutex<FnvHashMap<wgpu::TextureFormat, Arc<wgpu::RenderPipeline>>>,
     copy_srgb_pipeline: Mutex<FnvHashMap<wgpu::TextureFormat, Arc<wgpu::RenderPipeline>>>,
     shaders: Shaders,
     pipelines: Mutex<FnvHashMap<(u32, wgpu::TextureFormat), Arc<Pipelines>>>,
@@ -26,6 +31,20 @@ impl Descriptors {
         let shaders = Shaders::new(&device);
         let quad = Quad::new(&device);
 
+        let blend_array: [wgpu::Buffer; BlendMode::LENGTH] = (0..BlendMode::LENGTH)
+            .map(|blend_id| {
+                let blend_mode = BlendMode::from_usize(blend_id);
+                create_buffer_with_data(
+                    &device,
+                    bytemuck::cast_slice(&[blend_mode.to_i32(), 0, 0, 0]),
+                    wgpu::BufferUsages::UNIFORM,
+                    create_debug_label!("Blend mode {:?}", blend_mode),
+                )
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
         Self {
             adapter,
             device,
@@ -34,9 +53,11 @@ impl Descriptors {
             bitmap_samplers,
             bind_layouts,
             quad,
+            copy_pipeline: Default::default(),
             copy_srgb_pipeline: Default::default(),
             shaders,
             pipelines: Default::default(),
+            blend_buffers: EnumMap::from_array(blend_array),
         }
     }
 
@@ -75,7 +96,68 @@ impl Descriptors {
                                 entry_point: "main_fragment",
                                 targets: &[Some(wgpu::ColorTargetState {
                                     format,
-                                    blend: Some(wgpu::BlendState::REPLACE),
+                                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                                    write_mask: Default::default(),
+                                })],
+                            }),
+                            primitive: wgpu::PrimitiveState {
+                                topology: wgpu::PrimitiveTopology::TriangleList,
+                                strip_index_format: None,
+                                front_face: wgpu::FrontFace::Ccw,
+                                cull_mode: None,
+                                polygon_mode: wgpu::PolygonMode::default(),
+                                unclipped_depth: false,
+                                conservative: false,
+                            },
+                            depth_stencil: None,
+                            multisample: wgpu::MultisampleState {
+                                count: 1,
+                                mask: !0,
+                                alpha_to_coverage_enabled: false,
+                            },
+                            multiview: None,
+                        }),
+                )
+            })
+            .clone()
+    }
+
+    pub fn copy_pipeline(&self, format: wgpu::TextureFormat) -> Arc<wgpu::RenderPipeline> {
+        let mut pipelines = self
+            .copy_pipeline
+            .lock()
+            .expect("Pipelines should not be already locked");
+        pipelines
+            .entry(format)
+            .or_insert_with(|| {
+                let copy_texture_pipeline_layout =
+                    &self
+                        .device
+                        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                            label: create_debug_label!("Copy pipeline layout").as_deref(),
+                            bind_group_layouts: &[
+                                &self.bind_layouts.globals,
+                                &self.bind_layouts.transforms,
+                                &self.bind_layouts.bitmap,
+                            ],
+                            push_constant_ranges: &[],
+                        });
+                Arc::new(
+                    self.device
+                        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                            label: create_debug_label!("Copy pipeline").as_deref(),
+                            layout: Some(&copy_texture_pipeline_layout),
+                            vertex: wgpu::VertexState {
+                                module: &self.shaders.copy_shader,
+                                entry_point: "main_vertex",
+                                buffers: &VERTEX_BUFFERS_DESCRIPTION,
+                            },
+                            fragment: Some(wgpu::FragmentState {
+                                module: &self.shaders.copy_shader,
+                                entry_point: "main_fragment",
+                                targets: &[Some(wgpu::ColorTargetState {
+                                    format,
+                                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                                     write_mask: Default::default(),
                                 })],
                             }),
